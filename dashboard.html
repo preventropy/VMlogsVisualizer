@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VM Session & Consistency Analyzer</title>
+  <!-- Plotly.js for interactive charting -->
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <!-- PapaParse for robust CSV parsing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --green: #22c55e;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --purple: #a855f7;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+      line-height: 1.5;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    h1 { font-size: 1.5rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; }
+    .subtitle { color: var(--text-muted); font-size: 0.9rem; }
+
+    /* Drag and Drop Zone */
+    .upload-container {
+      background: var(--card-bg);
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-bottom: 24px;
+    }
+    .upload-container:hover, .upload-container.dragover {
+      border-color: var(--accent);
+      background: #1e293b80;
+    }
+    .upload-icon { font-size: 2rem; margin-bottom: 8px; }
+    .upload-text { font-size: 1rem; font-weight: 600; margin-bottom: 4px; }
+    .upload-subtext { font-size: 0.82rem; color: var(--text-muted); }
+    #csvFileInput { display: none; }
+
+    /* Stat Cards */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .metric-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+    }
+    .metric-title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 6px; }
+    .metric-value { font-size: 1.6rem; font-weight: 700; color: #fff; }
+    .metric-hint { font-size: 0.78rem; color: var(--text-muted); margin-top: 4px; }
+
+    /* Navigation Tabs */
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.9rem;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover { color: #fff; background: var(--border); }
+    .tab-btn.active { color: #fff; background: var(--accent-hover); }
+
+    /* Chart Containers */
+    .chart-panel {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+      display: none;
+    }
+    .chart-panel.active { display: block; }
+    .chart-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    select, button.btn, input[type="range"] {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    button.btn:hover { background: var(--border); }
+
+    /* Tables */
+    .table-container {
+      overflow-x: auto;
+      max-height: 400px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      text-align: left;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background: #0f172a;
+      padding: 10px 12px;
+      color: var(--text-muted);
+      font-weight: 600;
+      border-bottom: 2px solid var(--border);
+    }
+    td {
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    tr:hover td { background: #33415533; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-reaper { background: #f59e0b25; color: var(--amber); border: 1px solid var(--amber); }
+    .badge-user { background: #22c55e25; color: var(--green); border: 1px solid var(--green); }
+    .badge-open { background: #ef444425; color: var(--red); border: 1px solid var(--red); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div>
+      <h1>🖥️ AWS User VM Lifecycle & Consistency Analyzer</h1>
+      <div class="subtitle">Session Reconstruction, Idle Reaper Attribution, and Behavioral Predictability</div>
+    </div>
+    <button class="btn" onclick="exportSessionsCSV()">📥 Export Sessions CSV</button>
+  </header>
+
+  <!-- Drag and drop zone -->
+  <div class="upload-container" id="dropZone" onclick="document.getElementById('csvFileInput').click()">
+    <div class="upload-icon">📂</div>
+    <div class="upload-text" id="uploadText">Drop your full 250-record CSV here, or click to browse</div>
+    <div class="upload-subtext">Currently displaying preloaded preview data. All parsing happens locally in your browser.</div>
+    <input type="file" id="csvFileInput" accept=".csv">
+  </div>
+
+  <!-- Summary Cards -->
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-title">Completed Sessions</div>
+      <div class="metric-value" id="valTotalSessions">-</div>
+      <div class="metric-hint" id="hintTotalSessions">-</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Avg Session Duration</div>
+      <div class="metric-value" id="valAvgDuration">-</div>
+      <div class="metric-hint" id="valStdDev">Std Dev: -</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Reaper Timeout Rate</div>
+      <div class="metric-value" id="valReaperRate">-</div>
+      <div class="metric-hint">Stopped by StopUserVMsJob</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Anomalies / Resets</div>
+      <div class="metric-value" id="valAnomalies">-</div>
+      <div class="metric-hint" id="hintAnomalies">Unclosed starts or resets</div>
+    </div>
+  </div>
+
+  <!-- Tabs Navigation -->
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('tab-timeline')">1. Gantt Timeline</button>
+    <button class="tab-btn" onclick="switchTab('tab-stepplot')">2. Step Plot (Machine State)</button>
+    <button class="tab-btn" onclick="switchTab('tab-concurrency')">3. Fleet Concurrency</button>
+    <button class="tab-btn" onclick="switchTab('tab-table')">4. Session Breakdown & Stats</button>
+  </div>
+
+  <!-- Tab 1: Gantt Timeline -->
+  <div id="tab-timeline" class="chart-panel active">
+    <div class="chart-controls">
+      <div>
+        <h3>Multi-User Active Session Timeline</h3>
+        <span class="subtitle">Drag horizontally or use the range selector to zoom</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <label for="barHeightSlider" style="font-size: 0.85rem; color: var(--text-muted);">Bar Thickness / Row Gap:</label>
+        <input type="range" id="barHeightSlider" min="6" max="24" value="12" oninput="renderTimeline()">
+        <span id="barHeightVal" style="font-size: 0.85rem; color: var(--text); min-width: 36px;">12px</span>
+      </div>
+    </div>
+    <div id="timelinePlot" style="width: 100%; min-height: 120px;"></div>
+  </div>
+
+  <!-- Tab 2: Step Plot -->
+  <div id="tab-stepplot" class="chart-panel">
+    <div class="chart-controls">
+      <h3>Machine State Over Time (1 = Running, 0 = Stopped)</h3>
+      <div>
+        <label for="userSelect" style="font-size: 0.85rem; color: var(--text-muted); margin-right: 8px;">Select User:</label>
+        <select id="userSelect" onchange="renderStepPlot()"></select>
+      </div>
+    </div>
+    <div id="stepPlot" style="width: 100%; height: 450px;"></div>
+  </div>
+
+  <!-- Tab 3: Fleet Concurrency -->
+  <div id="tab-concurrency" class="chart-panel">
+    <div class="chart-controls">
+      <h3>Simultaneous Active VMs Over Time</h3>
+      <span class="subtitle">Peak concurrent usage indicator for capacity and AWS cloud cost</span>
+    </div>
+    <div id="concurrencyPlot" style="width: 100%; height: 450px;"></div>
+  </div>
+
+  <!-- Tab 4: Session Table -->
+  <div id="tab-table" class="chart-panel">
+    <div class="chart-controls">
+      <h3>Reconstructed Session Table</h3>
+      <span class="subtitle" id="tableRecordCount">-</span>
+    </div>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Start Time</th>
+            <th>End Time</th>
+            <th>Duration (mins)</th>
+            <th>Termination Trigger</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="sessionTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    // Embedded preview data
+    const SAMPLE_CSV = `Desktop,Event,Trigger,DateTime,UserID,Name,SemesterCourse,OnlyHasWindowsDesktop?
+Windows,Started,User-20472,9/15/2026 15:34,20472,"Smith, John",2531,TRUE
+Windows,Stopped,StopUserVMsJob,9/15/2026 16:07,20472,"Smith, John",2531,TRUE
+Windows,Started,User-20472,9/15/2026 16:10,20472,"Smith, John",2531,TRUE
+Windows,Stopped,StopUserVMsJob,9/15/2026 16:52,20472,"Smith, John",2531,TRUE
+Windows,Started,User-20472,9/15/2026 16:58,20472,"Smith, John",2531,TRUE
+Windows,Stopped,StopUserVMsJob,9/15/2026 17:37,20472,"Smith, John",2531,TRUE
+Windows,Started,User-20472,9/15/2026 17:55,20472,"Smith, John",2531,TRUE
+Windows,Stopped,StopUserVMsJob,9/15/2026 18:37,20472,"Smith, John",2531,TRUE
+Windows,Started,User-20472,9/15/2026 19:50,20472,"Smith, John",2531,TRUE
+Windows,Started,User-20472,9/16/2026 13:22,20472,"Smith, John",2531,TRUE
+Windows,Reset Started,User-User-19008,9/16/2026 15:07,20472,"Smith, John",2531,TRUE
+Windows,Created,ResetVMsJob,9/16/2026 15:07,20472,"Smith, John",2531,TRUE
+Windows,Unknown,PollAwsUserVMStatesJob,9/16/2026 15:07,20472,"Smith, John",2531,TRUE
+Windows,Reset Completed,ResetVMsJob,9/16/2026 15:08,20472,"Smith, John",2531,TRUE
+Windows,Stopped,StopUserVMsJob,9/16/2026 15:48,20472,"Smith, John",2531,TRUE`;
+
+    let rawData = [];
+    let reconstructedSessions = [];
+    let resetEvents = [];
+    let userNames = {};
+
+    window.addEventListener('DOMContentLoaded', () => {
+      parseAndProcessCSV(SAMPLE_CSV, "preview data (15 records)");
+      setupFileHandlers();
+    });
+
+    function setupFileHandlers() {
+      const dropZone = document.getElementById('dropZone');
+      const fileInput = document.getElementById('csvFileInput');
+
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+      });
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) {
+          handleFile(e.dataTransfer.files[0]);
+        }
+      });
+      fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+          handleFile(e.target.files[0]);
+        }
+      });
+    }
+
+    function handleFile(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        parseAndProcessCSV(e.target.result, file.name);
+      };
+      reader.readAsText(file);
+    }
+
+    function parseDateSafe(dateStr) {
+      if (!dateStr) return null;
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) return d;
+      return null;
+    }
+
+    function lastNameOf(name) {
+      if (!name) return '';
+      const trimmed = String(name).trim();
+      return trimmed.includes(',') ? trimmed.split(',')[0].trim() : trimmed;
+    }
+
+    function parseAndProcessCSV(csvString, sourceLabel) {
+      Papa.parse(csvString, {
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+          rawData = results.data.filter(r => r.DateTime && r.Event);
+          document.getElementById('uploadText').innerText = `Loaded: ${sourceLabel} (${rawData.length} rows)`;
+          processData();
+          updateUI();
+        }
+      });
+    }
+
+    function processData() {
+      userNames = {};
+      rawData.forEach(r => {
+        r.parsedDate = parseDateSafe(r.DateTime);
+        r.userName = r.Name ? r.Name.replace(/"/g, '') : (r.UserID || 'Unknown');
+        if (r.UserID && !(r.UserID in userNames)) {
+          userNames[r.UserID] = lastNameOf(r.userName);
+        }
+      });
+
+      const validRows = rawData.filter(r => r.parsedDate !== null)
+        .sort((a, b) => a.parsedDate - b.parsedDate);
+
+      const usersMap = {};
+      resetEvents = [];
+
+      validRows.forEach(r => {
+        const u = r.UserID || 'Unknown';
+        if (!usersMap[u]) usersMap[u] = [];
+        usersMap[u].push(r);
+
+        if (r.Event && r.Event.toLowerCase().includes('reset')) {
+          resetEvents.push(r);
+        }
+      });
+
+      reconstructedSessions = [];
+
+      Object.keys(usersMap).forEach(userId => {
+        const events = usersMap[userId];
+        let currentSession = null;
+
+        for (let i = 0; i < events.length; i++) {
+          const ev = events[i];
+          const eventType = ev.Event.trim();
+
+          if (eventType === 'Started') {
+            if (currentSession) {
+              currentSession.endTime = ev.parsedDate;
+              currentSession.durationMin = Math.round((currentSession.endTime - currentSession.startTime) / 60000);
+              currentSession.endTrigger = 'Inferred (Consecutive Start)';
+              currentSession.isAnomaly = true;
+              currentSession.status = 'Orphan (Consecutive Start)';
+              reconstructedSessions.push(currentSession);
+            }
+            currentSession = {
+              userId: userId,
+              userName: ev.userName,
+              course: ev.SemesterCourse || '',
+              startTime: ev.parsedDate,
+              startTrigger: ev.Trigger,
+              endTime: null,
+              endTrigger: null,
+              durationMin: 0,
+              isAnomaly: false,
+              status: 'Open'
+            };
+          } else if (eventType === 'Stopped') {
+            if (currentSession) {
+              currentSession.endTime = ev.parsedDate;
+              currentSession.endTrigger = ev.Trigger || 'Unknown';
+              currentSession.durationMin = Math.round((currentSession.endTime - currentSession.startTime) / 60000);
+              currentSession.status = 'Completed';
+              reconstructedSessions.push(currentSession);
+              currentSession = null;
+            } else {
+              reconstructedSessions.push({
+                userId: userId,
+                userName: ev.userName,
+                course: ev.SemesterCourse || '',
+                startTime: new Date(ev.parsedDate.getTime() - 30 * 60000),
+                endTime: ev.parsedDate,
+                startTrigger: 'Unknown',
+                endTrigger: ev.Trigger,
+                durationMin: 30,
+                isAnomaly: true,
+                status: 'Orphan Stop (Start Missing)'
+              });
+            }
+          }
+        }
+
+        if (currentSession) {
+          currentSession.status = 'Unterminated at Log End';
+          currentSession.isAnomaly = true;
+          reconstructedSessions.push(currentSession);
+        }
+      });
+    }
+
+    function updateUI() {
+      const completed = reconstructedSessions.filter(s => s.status === 'Completed' && s.durationMin > 0);
+      const durations = completed.map(s => s.durationMin);
+
+      const totalCompleted = completed.length;
+      document.getElementById('valTotalSessions').innerText = totalCompleted;
+      document.getElementById('hintTotalSessions').innerText = `${reconstructedSessions.length} total reconstructed windows`;
+
+      if (totalCompleted > 0) {
+        const avg = durations.reduce((a, b) => a + b, 0) / totalCompleted;
+        const variance = durations.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / totalCompleted;
+        const stdDev = Math.sqrt(variance);
+
+        document.getElementById('valAvgDuration').innerText = `${avg.toFixed(1)} m`;
+        document.getElementById('valStdDev').innerText = `Std Dev: ±${stdDev.toFixed(1)} mins`;
+
+        const reaperStops = completed.filter(s => s.endTrigger && s.endTrigger.includes('StopUserVMsJob')).length;
+        const reaperRate = ((reaperStops / totalCompleted) * 100).toFixed(0);
+        document.getElementById('valReaperRate').innerText = `${reaperRate}%`;
+      } else {
+        document.getElementById('valAvgDuration').innerText = '-';
+        document.getElementById('valStdDev').innerText = 'Std Dev: -';
+        document.getElementById('valReaperRate').innerText = '-';
+      }
+
+      const anomalies = reconstructedSessions.filter(s => s.isAnomaly).length + resetEvents.length;
+      document.getElementById('valAnomalies').innerText = anomalies;
+      document.getElementById('hintAnomalies').innerText = `${resetEvents.length} resets, ${anomalies - resetEvents.length} unclosed sessions`;
+
+      const userSelect = document.getElementById('userSelect');
+      const uniqueUsers = [...new Set(rawData.map(r => r.UserID))];
+      uniqueUsers.sort((a, b) =>
+        (userNames[a] || '').localeCompare(userNames[b] || '', undefined, { sensitivity: 'base' })
+      );
+      userSelect.innerHTML = uniqueUsers.map(u => {
+        const last = userNames[u] || '';
+        const label = last ? `User ${u} (${last})` : `User ${u}`;
+        return `<option value="${u}">${label}</option>`;
+      }).join('');
+
+      renderTimeline();
+      renderStepPlot();
+      renderConcurrency();
+      renderTable();
+    }
+
+    function renderTimeline() {
+      const validSessions = reconstructedSessions.filter(s => s.startTime && s.endTime);
+      
+      const barWidth = parseInt(document.getElementById('barHeightSlider')?.value || 12);
+      const valLabel = document.getElementById('barHeightVal');
+      if (valLabel) valLabel.innerText = `${barWidth}px`;
+
+      const uniqueUserIds = [...new Set(validSessions.map(s => s.userId))];
+      // Row height scales with the slider so it controls bar thickness AND vertical row gap
+      const rowHeight = barWidth * 2.5 + 12;
+      // Scale the plot to the actual row count (plus ~110px for the legend strip and x-axis labels) so no empty void sits between the legend and the chart
+      const dynamicHeight = Math.max(130, uniqueUserIds.length * rowHeight + 120);
+      document.getElementById('timelinePlot').style.height = `${dynamicHeight}px`;
+
+      // Y-axis labels: User ID with last name (name format is "Last, First")
+      const userLabels = {};
+      uniqueUserIds.forEach(userId => {
+        const last = userNames[userId] || '';
+        userLabels[userId] = last ? `User ${userId} (${last})` : `User ${userId}`;
+      });
+      // Sort rows alphabetically by last name so e.g. Smith appears after Brown
+      const sortedUserIds = [...uniqueUserIds].sort((a, b) =>
+        (userNames[a] || '').localeCompare(userNames[b] || '', undefined, { sensitivity: 'base' })
+      );
+
+      const userStops = validSessions.filter(s => !s.endTrigger || !s.endTrigger.includes('StopUserVMsJob'));
+      const reaperStops = validSessions.filter(s => s.endTrigger && s.endTrigger.includes('StopUserVMsJob'));
+
+      function makeTrace(sessions, name, color) {
+        return {
+          type: 'scatter',
+          mode: 'lines',
+          name: name,
+          x: sessions.flatMap(s => [s.startTime.toISOString(), s.endTime.toISOString(), null]),
+          y: sessions.flatMap(s => [userLabels[s.userId], userLabels[s.userId], null]),
+          line: { color: color, width: barWidth },
+          hoverinfo: 'text',
+          hovertext: sessions.flatMap(s => {
+            const text = `<b>${s.userName} (ID: ${s.userId})</b><br>` +
+                         `Start: ${s.startTime.toLocaleString()}<br>` +
+                         `End: ${s.endTime.toLocaleString()}<br>` +
+                         `Duration: ${s.durationMin} mins<br>` +
+                         `Trigger: ${s.endTrigger}`;
+            return [text, text, null];
+          })
+        };
+      }
+
+      const traces = [
+        makeTrace(userStops, 'User Stopped / Other', '#22c55e'),
+        makeTrace(reaperStops, 'Timeout (StopUserVMsJob)', '#f59e0b')
+      ];
+
+      const layout = {
+        paper_bgcolor: '#1e293b',
+        plot_bgcolor: '#0f172a',
+        font: { color: '#f8fafc' },
+        margin: { l: 170, r: 40, t: 60, b: 50 },
+        xaxis: { type: 'date', gridcolor: '#1e293b', tickcolor: '#334155' },
+        yaxis: { 
+          gridcolor: '#334155', 
+          gridwidth: 1, 
+          tickcolor: '#334155', 
+          autorange: 'reversed',
+          dtick: 1,
+          categoryorder: 'array',
+          categoryarray: sortedUserIds.map(id => userLabels[id])
+        },
+        legend: { orientation: 'h', y: 1.0, yanchor: 'bottom', bgcolor: 'rgba(0,0,0,0)' }
+      };
+
+      Plotly.newPlot('timelinePlot', traces, layout, { responsive: true });
+    }
+
+    function renderStepPlot() {
+      const selectedUser = document.getElementById('userSelect').value;
+      if (!selectedUser) return;
+
+      const userEvents = rawData.filter(r => r.UserID === selectedUser && r.parsedDate)
+        .sort((a, b) => a.parsedDate - b.parsedDate);
+
+      const stepX = [];
+      const stepY = [];
+      const markersX = [];
+      const markersY = [];
+      const markerTexts = [];
+      const markerColors = [];
+
+      let state = 0;
+
+      userEvents.forEach(ev => {
+        const timeStr = ev.parsedDate.toISOString();
+        const evType = ev.Event.trim();
+
+        if (evType === 'Started') {
+          stepX.push(timeStr);
+          stepY.push(state);
+          state = 1;
+          stepX.push(timeStr);
+          stepY.push(state);
+
+          markersX.push(timeStr);
+          markersY.push(1);
+          markerTexts.push(`Started (${ev.Trigger})<br>${ev.parsedDate.toLocaleString()}`);
+          markerColors.push('#22c55e');
+        } else if (evType === 'Stopped') {
+          stepX.push(timeStr);
+          stepY.push(state);
+          state = 0;
+          stepX.push(timeStr);
+          stepY.push(state);
+
+          markersX.push(timeStr);
+          markersY.push(0);
+          markerTexts.push(`Stopped (${ev.Trigger})<br>${ev.parsedDate.toLocaleString()}`);
+          markerColors.push(ev.Trigger.includes('StopUserVMsJob') ? '#f59e0b' : '#ef4444');
+        } else if (evType.includes('Reset')) {
+          markersX.push(timeStr);
+          markersY.push(state);
+          markerTexts.push(`Event: ${evType} (${ev.Trigger})<br>${ev.parsedDate.toLocaleString()}`);
+          markerColors.push('#a855f7');
+        }
+      });
+
+      const traces = [
+        {
+          x: stepX,
+          y: stepY,
+          type: 'scatter',
+          mode: 'lines',
+          line: { shape: 'hv', color: '#38bdf8', width: 3 },
+          name: 'Machine State'
+        },
+        {
+          x: markersX,
+          y: markersY,
+          type: 'scatter',
+          mode: 'markers',
+          marker: { size: 10, color: markerColors, symbol: 'diamond' },
+          hoverinfo: 'text',
+          hovertext: markerTexts,
+          name: 'Lifecycle Event'
+        }
+      ];
+
+      const layout = {
+        paper_bgcolor: '#1e293b',
+        plot_bgcolor: '#0f172a',
+        font: { color: '#f8fafc' },
+        margin: { l: 60, r: 40, t: 30, b: 50 },
+        xaxis: { type: 'date', gridcolor: '#334155' },
+        yaxis: {
+          gridcolor: '#334155',
+          tickvals: [0, 1],
+          ticktext: ['Stopped (0)', 'Running (1)'],
+          range: [-0.2, 1.2]
+        },
+        showlegend: true,
+        legend: { orientation: 'h', y: 1.15 }
+      };
+
+      Plotly.newPlot('stepPlot', traces, layout, { responsive: true });
+    }
+
+    function renderConcurrency() {
+      const validSessions = reconstructedSessions.filter(s => s.startTime && s.endTime);
+      if (validSessions.length === 0) return;
+
+      const timestamps = [];
+      validSessions.forEach(s => {
+        timestamps.push({ time: s.startTime, change: 1 });
+        timestamps.push({ time: s.endTime, change: -1 });
+      });
+
+      timestamps.sort((a, b) => a.time - b.time);
+
+      const x = [];
+      const y = [];
+      let currentConcurrency = 0;
+
+      timestamps.forEach(pt => {
+        const tStr = pt.time.toISOString();
+        x.push(tStr);
+        y.push(currentConcurrency);
+        currentConcurrency += pt.change;
+        x.push(tStr);
+        y.push(currentConcurrency);
+      });
+
+      const trace = {
+        x: x,
+        y: y,
+        type: 'scatter',
+        mode: 'lines',
+        fill: 'tozeroy',
+        fillcolor: 'rgba(56, 189, 248, 0.2)',
+        line: { color: '#38bdf8', width: 2 },
+        name: 'Concurrent Active VMs'
+      };
+
+      const layout = {
+        paper_bgcolor: '#1e293b',
+        plot_bgcolor: '#0f172a',
+        font: { color: '#f8fafc' },
+        margin: { l: 50, r: 40, t: 30, b: 50 },
+        xaxis: { type: 'date', gridcolor: '#334155' },
+        yaxis: { gridcolor: '#334155', title: 'Running VMs', dtick: 1 }
+      };
+
+      Plotly.newPlot('concurrencyPlot', [trace], layout, { responsive: true });
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById('sessionTableBody');
+      tbody.innerHTML = '';
+      document.getElementById('tableRecordCount').innerText = `${reconstructedSessions.length} total session windows identified`;
+
+      reconstructedSessions.forEach(s => {
+        const tr = document.createElement('tr');
+        const startStr = s.startTime ? s.startTime.toLocaleString() : '-';
+        const endStr = s.endTime ? s.endTime.toLocaleString() : 'Active/Unknown';
+        
+        let badgeClass = 'badge-user';
+        if (s.endTrigger && s.endTrigger.includes('StopUserVMsJob')) badgeClass = 'badge-reaper';
+        if (s.isAnomaly) badgeClass = 'badge-open';
+
+        tr.innerHTML = `
+          <td><strong>${s.userName}</strong> (${s.userId})</td>
+          <td>${startStr}</td>
+          <td>${endStr}</td>
+          <td>${s.durationMin ? s.durationMin : '-'}</td>
+          <td>${s.endTrigger || '-'}</td>
+          <td><span class="badge ${badgeClass}">${s.status}</span></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.chart-panel').forEach(p => p.classList.remove('active'));
+
+      event.target.classList.add('active');
+      const panel = document.getElementById(tabId);
+      panel.classList.add('active');
+
+      if (tabId === 'tab-timeline') Plotly.Plots.resize('timelinePlot');
+      if (tabId === 'tab-stepplot') Plotly.Plots.resize('stepPlot');
+      if (tabId === 'tab-concurrency') Plotly.Plots.resize('concurrencyPlot');
+    }
+
+    function exportSessionsCSV() {
+      const rows = reconstructedSessions.map(s => ({
+        UserID: s.userId,
+        Name: s.userName,
+        StartTime: s.startTime ? s.startTime.toISOString() : '',
+        EndTime: s.endTime ? s.endTime.toISOString() : '',
+        DurationMinutes: s.durationMin,
+        StartTrigger: s.startTrigger || '',
+        EndTrigger: s.endTrigger || '',
+        Status: s.status,
+        IsAnomaly: s.isAnomaly
+      }));
+      const csv = Papa.unparse(rows);
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reconstructed_vm_sessions_${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>

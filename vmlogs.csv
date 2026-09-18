@@ -1,0 +1,16 @@
+Desktop,Event,Trigger,DateTime,UserID,Name,SemesterCourse,OnlyHasWindowsDesktop?
+Windows,Started,User-20472,9/15/2026 15:34,20472,"Smith, John",2531,TRUE
+Windows,Stopped,StopUserVMsJob,9/15/2026 16:07,20472,"Smith, John",2531,TRUE
+Windows,Started,User-20472,9/15/2026 16:10,20472,"Smith, John",2531,TRUE
+Windows,Stopped,StopUserVMsJob,9/15/2026 16:52,20472,"Smith, John",2531,TRUE
+Windows,Started,User-20472,9/15/2026 16:58,20472,"Smith, John",2531,TRUE
+Windows,Stopped,StopUserVMsJob,9/15/2026 17:37,20472,"Smith, John",2531,TRUE
+Windows,Started,User-20472,9/15/2026 17:55,20472,"Smith, John",2531,TRUE
+Windows,Stopped,StopUserVMsJob,9/15/2026 18:37,20472,"Smith, John",2531,TRUE
+Windows,Started,User-20472,9/15/2026 19:50,20472,"Smith, John",2531,TRUE
+Windows,Started,User-20472,9/16/2026 13:22,20472,"Smith, John",2531,TRUE
+Windows,Reset Started,User-User-19008,9/16/2026 15:07,20472,"Smith, John",2531,TRUE
+Windows,Created,ResetVMsJob,9/16/2026 15:07,20472,"Smith, John",2531,TRUE
+Windows,Unknown,PollAwsUserVMStatesJob,9/16/2026 15:07,20472,"Smith, John",2531,TRUE
+Windows,Reset Completed,ResetVMsJob,9/16/2026 15:08,20472,"Smith, John",2531,TRUE
+Windows,Stopped,StopUserVMsJob,9/16/2026 15:48,20472,"Smith, John",2531,TRUE
